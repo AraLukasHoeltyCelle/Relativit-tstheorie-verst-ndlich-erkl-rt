@@ -1,0 +1,174 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;  -- NICHT BIT wie häufig für FPGAs verwendet, um unabhängig von der Technologie zu sein
+use IEEE.NUMERIC_STD.ALL;  -- nötig für mathematische Befehle
+
+entity sek_zaehler is
+    Port ( CLK12MHZ, CLK_ARDU : in STD_LOGIC :='0'; -- Taktsignal auf dem CMOD Board ist 12 MHZ
+           ENABLE, RESET : in STD_LOGIC :='0';  -- Start der Zeitmessung
+           SEKUNDEN : out STD_LOGIC_VECTOR (10 downto 0);  -- 11 LEDs für die Lichtuhr
+           SEKUNDEN_1 : out STD_LOGIC_VECTOR (4 downto 0);  -- 5 LEDs für die Lichtuhr
+           CLED : out std_logic_vector (2 downto 0); -- farbige LEDs auf dem CMOD Board stören und brauchen Energie
+           TEST : out std_logic;
+           clkout : out std_logic );                                          
+end sek_zaehler;
+
+architecture Behavioral of sek_zaehler is
+ 
+--signal CTR: unsigned (21 downto 0); -- nötig um von 12 MHz auf einen 10 Hz Takt zu kommen (10 Hz entspricht 0,1 Sekunden) 
+signal SEK: unsigned (4 downto 0); -- nötig um 11 LEDs 20 mal unterschiedlich anzusteuern
+--signal CE : std_logic; -- Enable Signal für den 10 Hz Zähler
+signal CE_1 : std_logic; -- Enable Signal für den 1 Hz Zähler
+signal SEK_1: unsigned (2 downto 0); -- nötig um 5 LEDs unterschiedlich anzusteuern
+
+signal CTR_40 : unsigned (7 downto 0) := "00000000";
+signal SEK_62 :unsigned (5 downto 0) := "000000";
+signal CE_2  : std_logic := '0';
+
+begin
+
+P7: process (clk12mhz, Reset, Enable)  -- Zähler bis 62
+    begin
+        if Reset = '0' then  
+            SEK_62 <= (others => '0');   
+        elsif rising_edge(clk12mhz) then
+            if Enable = '1' then
+            if CE_2 = '1' then  -- Enable für den Zähler 
+                if SEK_62 = "111110" then
+                    SEK_62 <= SEK_62 ;--(others => '0'); -- Falls 62 erreicht ist dann mit dem Zählen stoppen 
+                else
+                    SEK_62 <= SEK_62 + 1;  -- sonst hochzählen
+                end if;
+            end if;
+            end if;
+        end if;
+    end process P7;
+
+   
+P6: process (clk12mhz, Reset) -- Zähler durch 80
+    begin
+        if Reset = '0' then  -- Reset 
+            CTR_40 <= (others => '0');
+            CE_2 <= '0'; 
+        elsif rising_edge(clk12mhz) then
+            if CTR_40 = "10010101" then  -- falls 149  
+                CE_2 <= '1';  --Enable Signal für den Zähler zur Ansteuerung der IR-LED
+                CTR_40 <= (others => '0'); -- Zähler beginnt erneut zu zählen                  
+            else
+                CE_2 <= '0';
+                CTR_40 <= CTR_40 + 1;  -- Hochzählen des 5,6 MHz Zählers
+            end if;
+        end if;
+    end process P6;
+    
+--P1: process (CLK12MHZ, RESET, ENABLE) -- 12 MHz Zähler, um den Takt für den 0,1 Sekunden Zähler zu erzeugen
+--    begin
+--       if RESET = '1' then  -- Reset des 12 MHz Zählers, um den Takt für den 0,1 Sekunden Zähler zu erzeugen
+--            CTR <= (others => '0');
+--            CE <= '0';
+--       elsif rising_edge(CLK12MHZ) then
+--           if ENABLE = '0' then
+--            if CTR = "100100100111110000000" then  -- 0000000000000000001010  Reset des 12 MHZ Zählers. Hier muss für den Takt von 12MHz eigentlich "if CRT = "100100100111110000000" stehen" dient nur zur Simulation
+--                CE <= '1';  --Enable Signal für den LED Zähler
+--                CTR <= (others => '0'); -- 12 MHZ Zähler beginnt erneut zu zählen
+--            else
+--               CE <= '0';
+--               CTR <= CTR + 1;  -- Hochzählen des 12 MHz Zählers
+--           end if;
+--           else CTR <= CTR;
+--            end if;
+--        end if;
+--    end process P1;
+
+    
+P2: process (CLK_ARDU, RESET, ENABLE)  -- Zähler für 0,1 Sekunden -> entspricht 10 HZ
+    begin
+        if RESET = '0' then  -- Reset des Zählers für 0,1 Sekunden -> entspricht 10 HZ
+            SEK <= (others => '0');
+         elsif rising_edge(CLK_ARDU) then
+            if ENABLE = '0' then
+            --if CE = '1' then  -- Enable für den 10 HZ Zähler
+                    if SEK = "10011" then
+                        SEK <= (others => '0');-- Falls 19 erreicht ist dann mit dem Zählen von 0 neu beginnen 
+                        CE_1 <= '0';
+                    elsif SEK = "10010" then
+                         CE_1 <= '1';
+                         SEK <= SEK + 1;
+                    elsif SEK = "01000" then
+                         CE_1 <= '1';
+                         SEK <= SEK + 1;     
+                    else SEK <= SEK + 1;  -- sonst hochzählen
+                        CE_1 <= '0';
+                    end if;
+                else SEK <= SEK;
+                end if;    
+            --end if;
+        end if;
+end process P2;
+
+P4: process (CLK_ARDU, RESET, ENABLE)  -- Zähler für 1 Sekunden -> entspricht 1 HZ
+    begin
+        if RESET = '0' then  -- Reset des Zählers für 0,1 Sekunden -> entspricht 10 HZ
+            SEK_1 <= (others => '0');
+         elsif rising_edge(CLK_ARDU) then
+            if ENABLE = '0' then
+           -- if CE = '1' and CE_1 = '1' then  -- Enable für den 1 HZ Zähler
+            if CE_1 = '1' then  -- Enable für den 1 HZ Zähler
+                    if SEK_1 = "101" then
+                       SEK_1 <= (others => '0');-- Falls 5 erreicht ist dann mit dem Zählen von 0 neu beginnen
+                    else SEK_1 <= SEK_1 + 1;  -- sonst hochzählen
+                    end if;
+                else SEK_1 <= SEK_1;
+                end if;    
+            end if;
+        end if;
+end process P4;
+
+P3: process (SEK)  -- hier wird der Zählerstand des 10 Hz Zählers dekodiert und den LEDs zugeordnet
+begin
+        case SEK is
+            when "00000" => SEKUNDEN <= "00000000001";
+            when "00001" => SEKUNDEN <= "00000000010";
+            when "00010" => SEKUNDEN <= "00000000100";
+            when "00011" => SEKUNDEN <= "00000001000";
+            when "00100" => SEKUNDEN <= "00000010000";
+            when "00101" => SEKUNDEN <= "00000100000";
+            when "00110" => SEKUNDEN <= "00001000000";
+            when "00111" => SEKUNDEN <= "00010000000";
+            when "01000" => SEKUNDEN <= "00100000000";
+            when "01001" => SEKUNDEN <= "01000000000";
+            when "01010" => SEKUNDEN <= "10000000000";
+            when "01011" => SEKUNDEN <= "01000000000";
+            when "01100" => SEKUNDEN <= "00100000000";
+            when "01101" => SEKUNDEN <= "00010000000";
+            when "01110" => SEKUNDEN <= "00001000000";
+            when "01111" => SEKUNDEN <= "00000100000";
+            when "10000" => SEKUNDEN <= "00000010000";
+            when "10001" => SEKUNDEN <= "00000001000";
+            when "10010" => SEKUNDEN <= "00000000100";
+            when "10011" => SEKUNDEN <= "00000000010";
+            when others => SEKUNDEN <= "00000000000";
+        end case;
+
+end process P3;
+
+P5: process (SEK_1)  -- hier wird der Zählerstand des 10 Hz Zählers dekodiert und den LEDs zugeordnet
+begin
+        case SEK_1 is
+            when "000" => SEKUNDEN_1 <= "00000";
+            when "001" => SEKUNDEN_1 <= "00001";
+            when "010" => SEKUNDEN_1 <= "00011";
+            when "011" => SEKUNDEN_1 <= "00111";
+            when "100" => SEKUNDEN_1 <= "01111";
+            when "101" => SEKUNDEN_1 <= "11111";
+            when others => SEKUNDEN_1 <= "00000";
+        end case;
+
+end process P5;
+clkout <= SEK_62 (0);      -- Hat eine Frequenz von 56 KHz und die Anzahl von 31 Impulsen (die Anzahl sollte auf ca. 124 erhöht werden, oder auch NICHT!!)
+
+TEST <= CE_2;
+
+CLED <= "111"; -- farbige LEDs auf dem CMOD Board werden ausgeschaltet um Energie zu sparen 
+
+end Behavioral;
+
